@@ -1,6 +1,5 @@
 # Companion data layout
 
-The engineering validations deliberately keep data separate from source code.
 Clone or download
 [`Hust-WiSED-Dataset`](https://github.com/HUSTOROP/Hust-WiSED-Dataset), then
 run:
