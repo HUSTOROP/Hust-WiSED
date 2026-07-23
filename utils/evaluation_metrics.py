@@ -35,8 +35,7 @@ def token_edit_distance(seq1, seq2) -> int:
 # Structural Similarity
 # ============================================================
 def structural_similarity(seq1: List[int], seq2: List[int]) -> float:
-    """
-    閫氳繃鍏ㄥ眬 StructureKeyManager 鑾峰彇瑙勮寖鍖栫殑瀛楃涓诧紝姣旇緝缁撴瀯鐩镐技搴︺€?    """
+    """Compare structural similarity using canonical prefix sequences from StructureKeyManager."""
     if not seq1 and not seq2:
         return 1.0
     if not seq1 or not seq2:
@@ -47,7 +46,7 @@ def structural_similarity(seq1: List[int], seq2: List[int]) -> float:
         norm1 = km.canonical_form(seq1)
         norm2 = km.canonical_form(seq2)
     except Exception:
-        # Fallback 淇濇姢鏈哄埗
+        # Fallback safeguard.
         norm1 = "_".join(str(int(x)) for x in seq1)
         norm2 = "_".join(str(int(x)) for x in seq2)
 

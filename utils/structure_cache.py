@@ -25,7 +25,7 @@ class StructureKeyManager:
       - subtree_key: canonical key for a subtree token slice
       - template_key: canonical key for structure-level constant fitting caches
 
-    All three use normalized prefix tokens + G枚del hash so every module can share
+    All three use normalized prefix tokens plus a Godel hash so every module can share
     the same structural identity language.
     """
 

@@ -171,8 +171,8 @@ class SymbolVocab:
            field is one of u/v/w present in the current vocabulary;
         3. adv is an advection template and may only appear as adv(field), where
            field is one of u/v/w present in the current vocabulary. This keeps
-           adv semantically equivalent to u路鈭噓 / u路鈭噕 / u路鈭噖 templates instead
-           of opening a generic v路鈭噏 operator over arbitrary expressions.
+           adv semantically equivalent to field-gradient transport templates rather than
+           allowing a generic derivative operator over arbitrary expressions.
         """
         cleaned: List[str] = []
         for tok in tokens:
@@ -236,8 +236,8 @@ class SymbolVocab:
         return True, None
 
     def get_complexity_score(self, tokens: List[str]) -> float:
-        """缁熶竴浣跨敤 COMPLEXITY_MAP 璁＄畻澶嶆潅搴︺€?
-        杩欓噷涓嶅啀缁存姢绗簩濂楃嫭绔嬫潈閲嶏紝閬垮厤璁粌闃舵锛坋quation_evaluator.py锛?        涓庣粺璁?灞曠ず闃舵锛坢etrics.py锛夊嚭鐜板鏉傚害鍙ｅ緞涓嶄竴鑷寸殑闂銆?        """
+        """Compute complexity exclusively with COMPLEXITY_MAP.
+        This keeps training-time evaluation and reporting metrics on the same complexity scale."""
         score = 0.0
         for tok in tokens:
             if tok in (self.cfg.start_token, self.cfg.end_token, self.cfg.pad_token):

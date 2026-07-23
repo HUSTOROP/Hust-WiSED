@@ -8,7 +8,7 @@ from models.weak_form_evaluator import DataContext, WeakFormEvaluator, compute_f
 from models.operator_policy import OperatorPolicy, build_operator_policy, symbols_to_indices
 
 # ==============================================================================
-# 1. 绠楀瓙涓庣紦瀛樺垵濮嬪寲
+# 1. Operator and cache initialization.
 # ==============================================================================
 _BINARY, _UNARY, _DERIV = [], [], []
 _ACTIVE_OPERATOR_POLICY: OperatorPolicy = build_operator_policy(epoch=0, spatial_ndim=1)
@@ -34,7 +34,7 @@ def refresh_operator_groups(
     return set_operator_policy(policy)
 
 def sync_operator_groups_with_vocab() -> OperatorPolicy:
-    # vocab 鏇存柊鍚庯紝鍙噸鏄犲皠 token id锛屼笉閲嶇疆褰撳墠闃舵
+    # Remap token IDs after a vocabulary update without resetting the active policy.
     return set_operator_policy(_ACTIVE_OPERATOR_POLICY)
 
 refresh_operator_groups(epoch=0, spatial_ndim=1)
@@ -94,7 +94,7 @@ def get_optimizer_cache_stats(*args, **kwargs):
     return dict(_OPT_CACHE_STATS)
 
 # ==============================================================================
-# 2. 灏哄害鎰熺煡涓庡彈淇濇姢鐨勫父鏁颁紭鍖?(Scale-Aware Constant Optimization)
+# 2. Scale-aware safeguarded constant optimization.
 # ==============================================================================
 def _is_affine_symbolic(root_node) -> bool:
     """Conservatively detect whether an expression is affine in its constants."""
@@ -413,7 +413,7 @@ def _solve_global_ridge_least_squares(
         c_scaled = torch.zeros_like(c_scaled)
 
     # =========================================================================
-    # 杩樺師涓哄甫鐗╃悊閲忕翰鐨勫父鏁拌緭鍑猴細蹇呴』浣跨敤鏂扮殑 y_scale 鍜?Phi_scale
+    # Convert constants back to physical units with the current y_scale and Phi_scale.
     # =========================================================================
     c = c_scaled * (y_scale / Phi_scale)
     c = torch.clamp(c, -float(clamp), float(clamp))
@@ -991,7 +991,7 @@ def _zero_order_field_count(seq: List[int]) -> float:
 
 
 # ==============================================================================
-# 3. 鍩轰簬 AST 鐨勬紨鍖栨搷浣?
+# 3. AST-based evolutionary operators.
 # ==============================================================================
 def _expr_spans(seq: List[int]) -> List[Tuple[int, int]]:
     try: root = _Compiler(list(map(int, seq))).parse()
@@ -1185,14 +1185,14 @@ def _generate_random_tree(depth: int, max_depth: int, rng: random.Random, valid_
         op = rng.choice(_UNARY)
         sym = IDX2SYM.get(int(op), "")
 
-        # 寮哄埗缁欑灛闂寸敓鎴愮殑鐗╃悊瀹忕畻瀛愬寘瑁圭嚎鎬у父鏁帮紝渚?Ridge 鍥炲綊缂╂斁
+        # Wrap new physical macro operators in a linear constant so Ridge can rescale them.
         if sym in {"adv", "lap"}:
             fields = _field_terminal_idxs(valid_terminals)
             field_tok = rng.choice(fields) if fields else rng.choice(valid_terminals)
             mul_tok = SYM2IDX.get("*")
             const_tok = SYM2IDX.get("const")
             if mul_tok is not None and const_tok is not None:
-                return [mul_tok, const_tok, op, field_tok]  # 鐢熸垚 [* const lap u]
+                return [mul_tok, const_tok, op, field_tok]  # Generate [* const lap u].
             return [op, field_tok]
 
         return [op] + _generate_random_tree(depth+1, max_depth, rng, valid_terminals, valid_axes)
@@ -1491,7 +1491,7 @@ def mutate_sequence(seq: List[int], rng: random.Random, valid_terminals: List[in
 
 def additive_mutation(seq: List[int], rng: random.Random, valid_terminals: List[int], valid_axes: List[int], max_depth: int = 3) -> List[int]:
     """
-    涓撻棬閽堝 PDE 鍙戠幇鐨勨€滈」杩藉姞鈥濆彉寮傘€?    淇鐗堬細鏅鸿兘鍒ゅ畾瀛愭爲鏄惁鑷甫甯告暟锛岄槻姝骇鐢?* const * const 鐮村潖浠垮皠鎬ц川銆?    """
+    Apply a term-augmentation mutation tailored to PDE discovery. The repair avoids redundant * const * const structures by recognizing subtrees that already carry a leading constant."""
     if not is_valid_sequence(seq):
         return seq
 
@@ -1509,7 +1509,7 @@ def additive_mutation(seq: List[int], rng: random.Random, valid_terminals: List[
     else:
         new_term = _generate_random_tree(0, max_depth, rng, valid_terminals, valid_axes)
 
-    # 鏅鸿兘闃插濞冿細濡傛灉鏂板瓙鏍戝凡缁忎互 `* const` 寮€澶达紙濡?lap/adv锛夛紝鐩存帴鎷兼帴
+    # Append directly when the new subtree already begins with * const, such as lap or adv.
     if len(new_term) >= 2 and new_term[0] == mul_tok and new_term[1] == const_tok:
         out = [add_tok] + list(seq) + new_term
     else:
@@ -1518,7 +1518,7 @@ def additive_mutation(seq: List[int], rng: random.Random, valid_terminals: List[
     return out if is_valid_sequence(out) else list(seq)
 
 # ==============================================================================
-# 4. 绉嶇兢涓庢紨鍖栨帶鍒舵牳蹇?
+# 4. Population and evolutionary-control core.
 # ==============================================================================
 class EvolutionaryPopulation:
     def __init__(self, pop_size=100, rng_seed=42):
@@ -1757,7 +1757,7 @@ class EvolutionaryPopulation:
         kept = []
         seen_keys = set()
 
-        # 绗竴杞細姣忎釜缁撴瀯妗惰嚦灏戜繚鐣欒嫢骞蹭釜
+        # First pass: retain several candidates from each structural bucket.
         for sig, bucket_rows in buckets.items():
             for row in bucket_rows[:keep_per_signature]:
                 key = self._canonical_key(row["seq"])
@@ -1769,7 +1769,7 @@ class EvolutionaryPopulation:
             if len(kept) >= self.pop_size:
                 break
 
-        # 绗簩杞細鎸?fitness 琛ラ綈
+        # Second pass: fill remaining positions by fitness.
         for row in rows:
             key = self._canonical_key(row["seq"])
             if key in seen_keys:
@@ -2435,8 +2435,8 @@ class EvolutionaryPopulation:
             evaluated += 1
 
             # ====================================================================
-            # 馃専 鏋佺畝鍗曟鍓灊 (Zero-Triggered Pruning)
-            # 搴曞眰鏃犻噺绾?STRidge 宸茬粡鏇挎垜浠潃姝讳簡鍣０骞惰祴浜堜簡 0.0 鐨勭郴鏁?            # 鎴戜滑鍙渶瑕佽 AST 寮曟搸椤烘按鎺ㄨ垷锛屾妸 0.0 瀵瑰簲鐨勬爲鏋濈墿鐞嗘姌鏂嵆鍙?            # ====================================================================
+            # Zero-triggered pruning.
+            # STRidge has already set inactive coefficients to zero; remove only their associated trees.
             if fit.get("pred_valid", False) and len(consts) > 0:
                 # Coefficient pruning is threshold-based rather than only
                 # exact-zero-based, so small fitted terms are removed throughout
@@ -2453,7 +2453,7 @@ class EvolutionaryPopulation:
                         pruned_seq = self._canonicalize_seq(pruned_seq)
 
                         if is_valid_sequence(pruned_seq) and self._canonical_key(pruned_seq) not in self.history_set:
-                            # 褰诲簳骞插噣鍚庯紝鎵ц瀹岀編鏃犲亸 OLS
+                            # Refit the retained structure with unbiased ordinary least squares.
                             p_consts, p_fit = optimize_constants(
                                 pruned_seq, ctx, lambda_c=0.0, target_field=target_field,
                                 lambda_dx_chain=lambda_dx_chain, aggregate_mode=aggregate_mode, **opt_kwargs

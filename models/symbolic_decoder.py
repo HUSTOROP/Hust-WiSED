@@ -11,7 +11,7 @@ from models.operator_policy import OperatorPolicy, build_operator_policy
 # -----------------------------
 _SPECIALS = {"<START>", "<END>", "<PAD>", "<UNK>"}
 
-# 銆愮墿鐞嗗鍏堥獙闄愬埗銆戯細浠庤В鐮佸櫒鐨勫悎娉曠敓鎴愮┖闂翠腑鍓旈櫎鍗遍櫓绠楀瓙
+# Physics-oriented constraint: exclude unsafe operators from the decoder's valid generation space.
 _BINARY = {"+", "*", "/", "^"}  # ^ legacy-only; operator policy forbids it
 _UNARY_SAFE = {"neg", "lap", "adv", "sq", "cube"}
 _UNARY_TRANSC = {"sin", "cos", "exp", "log"}
@@ -243,7 +243,7 @@ class SymbolicDecoder(nn.Module):
         return z + tgt
 
     def _project_logits(self, hidden: torch.Tensor, target_ids: Optional[torch.Tensor]) -> torch.Tensor:
-        """鍏变韩 decoder trunk + per-target output head銆?"""
+        """Shared decoder trunk with a separate output head for each target."""
         target_ids = self._sanitize_target_ids(hidden.shape[0], hidden.device, target_ids)
         trunk = self.output_trunk(hidden)
         logits_all = torch.stack([head(trunk) for head in self.output_heads], dim=1)

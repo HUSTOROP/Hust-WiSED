@@ -106,14 +106,14 @@ def _pretty_rhs_to_sympy_text(rhs_str: str) -> str:
     for old, new in (("·", "*"), ("^", "**"), ("torch.abs", "abs"), ("−", "-")):
         parsed = parsed.replace(old, new)
 
-    # 关键修复 1：数值常数的导数直接视为 0
+    # Treat the derivative of a numeric constant as zero.
     parsed = _PAREN_NUMERIC_DERIV_RE.sub("0", parsed)
     parsed = _NUMERIC_DERIV_RE.sub("0", parsed)
 
-    # 普通场变量导数
+    # Derivative of a field variable.
     parsed = _FIELD_DERIV_RE.sub(lambda m: f"D({m.group(1)}, '{m.group(2)}')", parsed)
 
-    # 通用括号表达式导数
+    # Derivative of a general parenthesized expression.
     while True:
         match = _GENERIC_DERIV_MARK_RE.search(parsed)
         if match is None:
@@ -203,7 +203,7 @@ def _safe_polish_rhs(rhs: str, prune_tol: float) -> str:
     expr = _eval_sympy_expr(parsed_expr)
     sp = _get_sympy()
 
-    # 关键修复 2：先把可执行导数真正展开
+    # Expand executable derivatives before simplification.
     try:
         expr = expr.doit()
     except Exception:
@@ -259,12 +259,12 @@ def polish_discovered_equation(eq_str: str, prune_tol: float = 5e-5) -> str:
             rhs = rhs_raw.strip()
 
         # =========================================================
-        # 🌟 修复 1：字符串预清洗，防止 SymPy 解析崩溃
+        # Pre-clean equation strings before SymPy parsing.
         # =========================================================
-        # 1. 替换所有的 ^ 为 **
+        # 1. Replace every ^ with **.
         rhs = rhs.replace("^", "**")
 
-        # 2. 合并连续的求导下标，例如 (u^3)_{y}_{x} -> (u^3)_{yx}
+        # 2. Merge consecutive derivative indices, for example (u^3)_{y}_{x} -> (u^3)_{yx}.
         import re
         while re.search(r"_\{([a-zA-Z]+)\}_\{([a-zA-Z]+)\}", rhs):
             rhs = re.sub(r"_\{([a-zA-Z]+)\}_\{([a-zA-Z]+)\}", r"_{\1\2}", rhs)
@@ -276,13 +276,13 @@ def polish_discovered_equation(eq_str: str, prune_tol: float = 5e-5) -> str:
                 return eq_str
 
             # =========================================================
-            # 🌟 核心修复 1：强制执行微积分求导与常量折叠
-            # 这会将 Derivative(u**2, x) 转化为 2*u*u_x
-            # 将 0.000 * (...) 直接转化为 0
+            # Evaluate symbolic derivatives and fold constants.
+            # For example, Derivative(u**2, x) becomes 2*u*u_x.
+            # Convert 0.000 * (...) directly to 0.
             # =========================================================
             expr = expr.doit()
 
-            # 评估复杂的常数幂次，例如 0.9985**3 -> 0.9955
+            # Evaluate compound constant powers, for example 0.9985**3 -> 0.9955.
             expr = expr.evalf(6)
 
             n_ops = 999999
@@ -291,14 +291,14 @@ def polish_discovered_equation(eq_str: str, prune_tol: float = 5e-5) -> str:
             except Exception:
                 pass
 
-            # 接下来的逻辑保持不变：展开 -> 抹除微小量 -> 合并同类项
+            # Preserve the remaining workflow: expand, prune tiny terms, and combine like terms.
             use_heavy = (len(rhs) <= 400 and n_ops <= 160)
             if use_heavy:
                 try:
                     expr = sp.expand(expr)
                 except Exception:
                     pass
-                # 🌟 核心修复 2：彻底抹杀 OLS 产生的 0.0 或极小灰尘
+                # Remove exact zeros and tiny ordinary-least-squares artifacts.
                 expr = _prune_small_numbers(expr, prune_tol)
                 try:
                     expr = sp.factor_terms(expr)

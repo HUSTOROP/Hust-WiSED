@@ -453,7 +453,7 @@ class WiSEDTrainer:
 
         try:
             target_fields_default = [f"d{f}_t" for f in getattr(self._ctx0, "fields", ["u"])]
-            # 杩欓噷鍙槸涓轰簡鏄庣‘褰撳墠浠诲姟娲昏穬 target 鐨勯泦鍚堬紱embedding 鏈韩浠嶆敮鎸?du_t/dv_t/dw_t
+            # Record the active targets for this task; the embedding still supports du_t, dv_t, and dw_t.
             self.target_fields_default = target_fields_default
         except Exception:
             self.target_fields_default = ["du_t"]
@@ -1003,13 +1003,13 @@ class WiSEDTrainer:
             return None
         axes_order = list(getattr(ctx0, "axes_order", []))
         spatial_axes = [ax for ax in axes_order if ax != "t"]
-        # 2D/3D锛氱姝㈢┖闂寸矖閲囨牱锛屽彧淇濈暀鏃堕棿杞?subsample
+        # For 2D and 3D fields, disable spatial coarse subsampling and retain temporal subsampling only.
         if len(spatial_axes) >= 2:
             sanitized: Dict[str, int] = {}
             if "t" in stride_map and "t" in axes_order and stride_map["t"] > 1:
                 sanitized["t"] = stride_map["t"]
             return sanitized or None
-        # 1D锛氬厑璁稿師鏉ョ殑琛屼负
+        # Preserve the original subsampling behavior for 1D.
         return {
             ax: stride
             for ax, stride in stride_map.items()
@@ -2892,16 +2892,16 @@ class WiSEDTrainer:
                 readable = compile_equation(seq, consts, lhs=lhs) if compile_equation is not None else sequence_to_str(seq)
 
                 # =====================================================
-                # 馃専 娉ㄥ叆鎶涘厜鍣細鍦ㄥ啓鍏ユ帓琛屾鏃ュ織鍓嶏紝閫氳繃 SymPy 娓呮礂鎵€鏈夌瓑浠烽」
+                # Canonicalize equivalent terms with SymPy before writing the ranking log.
                 # =====================================================
                 try:
                     from utils.equation_simplifier import polish_discovered_equation
-                    # 寮鸿娓呮礂 0.0 椤癸紝骞跺睍寮€宓屽瀵兼暟
+                    # Remove explicit zero terms and expand nested derivatives.
                     readable = polish_discovered_equation(readable, prune_tol=float(getattr(self.cfg_obj, "small_coeff_prune_tol", 1e-4)))
                 except Exception:
-                    pass # 濡傛灉鎶涘厜澶辫触锛屼繚鐣欏師鏍风殑 readable
+                    pass  # Retain the readable equation if polishing fails.
 
-                # 浼樺寲甯告暟鐨勬樉绀烘牸寮忥紝闅愯棌 1e-18 绾у埆鐨?0.000 纰庣墖
+                # Format constants compactly and suppress numerical fragments near 1e-18.
                 const_str = np.array2string(np.asarray(consts), precision=6, separator=' ', suppress_small=True, max_line_width=200)
 
                 f.write(

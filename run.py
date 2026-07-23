@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-"""WiSED 简化运行入口。
+"""Simplified WiSED entry point.
 
-直接在本文件顶部修改实验项目、噪声水平和设备，然后在 VSCode 中点击运行，
-或在终端执行：
+Edit the experiment projects, noise levels, and device settings below, then run this file in an IDE
+or from a terminal:
 
     python run.py
 
-也可以临时用命令行覆盖顶部配置：
+Command-line arguments can temporarily override the configuration above:
 
     python run.py --equations burgers_2d,fhn_2d --noise 0,0.01 --device cpu
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 # ============================================================
-# 运行配置区：日常实验只改这里
+# Runtime configuration: edit this block for routine experiments.
 # ============================================================
 EXPERIMENT_PROJECTS: List[str] = [
     #"burgers_1d",
@@ -29,12 +29,12 @@ EXPERIMENT_PROJECTS: List[str] = [
 NOISE_LEVELS: List[float] = [ 0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.10]
 SEEDS: List[int] = [42]
 DEVICE: str = "cuda"
-TARGETS: Optional[List[str]] = None          # 例如 ["u"] 或 ["u", "v"]；None 表示使用方程默认目标
+TARGETS: Optional[List[str]] = None          # For example, ["u"] or ["u", "v"]; None uses the equation default.
 SKIP_EXISTING: bool = False
 CONTINUE_ON_ERROR: bool = True
 
-# 单次数据集生成入口。需要生成数据时，把 RUN_MODE 改成 "data"。
-RUN_MODE: str = "experiment"                 # "experiment" 或 "data"
+# Single-run dataset generation entry point. Set RUN_MODE to "data" to generate data.
+RUN_MODE: str = "experiment"                 # "experiment" or "data"
 DATA_BATCH_SIZE: Optional[int] = None
 DATA_SAVE_DIR: str = "data/dataset"
 
@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--targets", default=None if TARGETS is None else ",".join(TARGETS))
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--skip-existing", action="store_true", default=SKIP_EXISTING)
-    parser.add_argument("--stop-on-error", action="store_true", help="遇到单个实验失败时立即停止。")
+    parser.add_argument("--stop-on-error", action="store_true", help="Stop immediately after an individual experiment fails.")
     parser.add_argument("--data-save-dir", default=DATA_SAVE_DIR)
     parser.add_argument("--data-batch-size", type=int, default=DATA_BATCH_SIZE)
     return parser

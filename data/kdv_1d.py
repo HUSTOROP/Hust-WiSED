@@ -16,10 +16,10 @@ def generate_random_ic(x: np.ndarray, rng: np.random.RandomState, n_modes: int =
         u += amp * np.cos(k * x + phase)
     u += 0.2 * np.exp(-0.5 * (x / 0.8) ** 2)
 
-    # 关键修改：去掉空间均值，避免 KdV 中 u*u_x 和 u_x 混淆
+    # Remove the spatial mean to distinguish u*u_x from u_x in KdV.
     u = u - np.mean(u)
 
-    # 再归一化幅值
+    # Normalize the amplitude again.
     u = u / (np.max(np.abs(u)) + 1e-8)
 
     return u.astype(DTYPE_NP)

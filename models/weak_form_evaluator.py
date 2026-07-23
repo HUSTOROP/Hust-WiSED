@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 
 def normalize_target_field_name(target_field: Optional[str]) -> str:
-    """瑙勮寖鍖栫洰鏍囧瓧娈靛悕锛屽彧淇濈暀 du_t / dv_t / dw_t 褰㈠紡銆?"""
+    """Normalize a target field name to du_t, dv_t, or dw_t form."""
     field = str(target_field or "du_t").strip()
     if field in {"u", "v", "w"}:
         return f"d{field}_t"
@@ -25,8 +25,8 @@ def normalize_target_field_name(target_field: Optional[str]) -> str:
 
 def robust_strong_derivative(u: torch.Tensor, axis: int, L: float, order: int = 1, is_periodic: bool = True) -> torch.Tensor:
     """
-    绾噣鐗堟嫙璋辨眰瀵?(铻嶅悎 Hou-Li 楂橀樁鎸囨暟婊ゆ尝鍣?
-    褰诲簳閲婃斁 10^-13 鐨勮氨绮惧害锛屽悓鏃朵粠棰戠巼鏍规簮涓婃壖鏉€婵€娉㈠紩鍙戠殑 Gibbs 鎸搩銆?    """
+    High-accuracy spectral derivative with a Hou-Li exponential filter.
+    The filter suppresses Gibbs oscillations while retaining smooth low-frequency content."""
     n = u.shape[axis]
     if n < 3: return torch.zeros_like(u)
 
@@ -35,11 +35,11 @@ def robust_strong_derivative(u: torch.Tensor, axis: int, L: float, order: int = 
         k = 2.0 * torch.pi * torch.fft.fftfreq(n, d=L / n, device=u.device, dtype=torch.float64)
 
         # =========================================================
-        # 銆愭牴婧愬崌绾с€戯細Hou-Li 36闃惰氨婊ゆ尝鍣?(Spectral Filter)
-        # 褰诲簳鏇夸唬绌洪棿鍩熺殑鏈夐檺宸垎锛屽湪棰戝煙瀹岀編闀囧帇婵€娉㈡尟閾?        # =========================================================
+        # Hou-Li spectral filter.
+        # Use frequency-domain filtering to suppress Gibbs oscillations.
         k_max = torch.max(torch.abs(k))
         if k_max > 0:
-            # alpha=36, p=36 鏄鐞嗘縺娉㈢殑鏍囧噯瓒呭弬鏁帮紝淇濊瘉浣庨 10^-15 鏃犳崯
+            # alpha=36 and p=36 preserve smooth low-amplitude modes while attenuating the highest frequencies.
             filter_func = torch.exp(-36.0 * (torch.abs(k) / k_max)**36)
         else:
             filter_func = torch.ones_like(k)
@@ -49,7 +49,7 @@ def robust_strong_derivative(u: torch.Tensor, axis: int, L: float, order: int = 
         k = k.view(*shape)
         filter_func = filter_func.view(*shape)
 
-        # 灏嗘眰瀵肩畻瀛愪笌婊ゆ尝鍣ㄥ湪棰戝煙鐩镐箻
+        # Combine the differentiation operator and spectral filter in the frequency domain.
         multiplier = ((1j * k) ** order) * filter_func
         fft_u = torch.fft.fftn(u_double, dim=(axis,))
         out = torch.fft.ifftn(fft_u * multiplier, dim=(axis,)).real
@@ -88,7 +88,7 @@ class DataContext:
 
         self.periodic_axes = dict(periodic_axes or {})
 
-        # 鍙厑璁?uvw 浣滀负鍦哄悕锛涙湭鎻愪緵鏃堕粯璁ゅ崟鍦?u
+        # Accept u, v, and w as field names; default to a single field u when none are supplied.
         raw_fields = list(field_names) if field_names is not None else ["u"]
         valid_field_pool = ["u", "v", "w"]
         self.fields = [f for f in raw_fields if f in valid_field_pool]
@@ -100,7 +100,7 @@ class DataContext:
             for k, v in coords.items()
         }
 
-        # 鍙厑璁?txyz 浣滀负杞达紱淇濇寔鏁版嵁缁欏嚭鐨勯『搴忥紝浣嗗己鍒?t 鍦ㄥ墠
+        # Accept t, x, y, and z as axes; retain the supplied order while placing t first.
         raw_axes = [ax for ax in self.coords.keys() if ax in ("t", "x", "y", "z")]
         if "t" in raw_axes:
             self.axes_order = ["t"] + [ax for ax in raw_axes if ax != "t"]
@@ -121,8 +121,8 @@ class DataContext:
         self.scoring_form = str(scoring_form or "weak").strip().lower()
 
         # ==============================================================
-        # 鍒ゆ柇 data_array 鐨勭淮搴︽槸鍚﹀垰濂界瓑浜庡潗鏍囪酱鐨勬暟閲?(渚嬪 [T, X] 鏈?2 涓酱)
-        # 濡傛灉鐩哥瓑锛岃鏄庣己澶变簡鏈€鍚庣殑閫氶亾缁村害 C锛屾垜浠渶瑕佺粰瀹冭ˉ涓?np.newaxis
+        # Check whether data_array has one dimension per coordinate axis, for example [T, X].
+        # If so, append the missing final channel dimension C.
         # ==============================================================
         if data_array.ndim == len(self.coords):
             data_array = data_array[..., np.newaxis]
@@ -138,12 +138,12 @@ class DataContext:
 
         # data_array now has an explicit channel dimension, e.g. [T, X, 1].
         for i, fname in enumerate(self.fields):
-            # 灏嗘瘡涓墿鐞嗗満鐙珛瀛樺偍骞舵敞鍐屼负绫诲睘鎬?(渚嬪 ctx.u, ctx.v)
+            # Store each physical field independently and register it as an attribute, for example ctx.u.
             field_tensor = torch.as_tensor(data_array[..., i], dtype=torch.float64, device=self.device)
             setattr(self, fname, field_tensor)
             self._cache[fname] = field_tensor
 
-        # 鍏煎鏃т唬鐮佸 ctx.u 鐨勭‖缂栫爜寮曠敤
+        # Retain backward-compatible ctx.u access for legacy code.
         self.u = self._cache.get(self.fields[0])
 
         for name, grid in zip(self.coords.keys(), torch.meshgrid(*self.coords.values(), indexing='ij')):
@@ -232,7 +232,7 @@ class DataContext:
             n_axis = max(1.0, L_phys / W_phys)
             n_eff *= n_axis
 
-        # 璁惧畾鐗╃悊搴曠嚎锛氬嵆浣跨獥鍙ｅ緢澶э紝涔熻涓鸿嚦灏戞湁 10 涓嫭绔嬭娴嬬偣
+        # Enforce a lower bound of ten independent quadrature samples.
         return max(10.0, n_eff)
 
     def _make_local_psi(self, ax: str) -> torch.Tensor:
@@ -291,7 +291,7 @@ class DataContext:
         step = self.steps[ax]
         c = (w - 1) / 2
 
-        # 1. 鏍稿績淇锛氳嚜鍙橀噺 z 蹇呴』鎸傝浇 requires_grad=True锛屾墠鑳芥瀯寤烘眰瀵艰绠楀浘
+        # The local coordinate z must require gradients to construct the derivative graph.
         z = (torch.arange(w, dtype=torch.float64, device=self.device) - c) / c
         z.requires_grad_(True)
 
@@ -305,16 +305,16 @@ class DataContext:
         filt_0 = filt_0.detach()
         z_val = z.detach()
 
-        # --- 鏁板鏍稿績锛氱鏁ｅ垎閮ㄧН鍒嗕弗鏍兼牎鍑?---
+        # Numerical core: validate the discrete integration-by-parts identity.
         if order > 0:
             import math
-            # 鏋勯€犲椤瑰紡娴嬭瘯椤?z^k / k!
+            # Construct polynomial test functions z^k / k!.
             test_monomial = (z_val ** order) / math.factorial(order)
 
             discrete_rhs = torch.sum(filt * ((-1)**order) * test_monomial)
             discrete_lhs = torch.sum(filt_0)
 
-            # 璁＄畻鏍″噯涔樺瓙锛屽交搴曟秷闄ら粠鏇煎拰绂绘暎鍖栫殑鎴柇璇樊
+            # Compute a calibration factor to reduce trapezoidal and discretization bias.
             correction = discrete_lhs / (discrete_rhs + 1e-12)
             filt = filt * correction
 
@@ -405,7 +405,7 @@ class DataContext:
 
 
     def project_weak(self, arr: torch.Tensor, derivative_orders: Optional[Dict[str, int]] = None) -> torch.Tensor:
-        """澶氱淮杩炵画鍒嗙寮忓急褰㈠紡绉垎锛岀粺涓€浜嗗懆鏈熶笌闈炲懆鏈熻竟鐣岀殑閫昏緫"""
+        """Project a multidimensional field into weak-form features with unified periodic and non-periodic boundary handling."""
         derivative_orders = derivative_orders or {}
 
         out = arr.to(dtype=torch.float64, device=self.device)
@@ -425,26 +425,26 @@ class DataContext:
 
             if bool(self.periodic_axes.get(ax, False)):
                 # ====================================================================
-                # 鎵嬪姩瀹炵幇 Circular Padding锛岀‘淇濆嵎绉牳鍦ㄨ竟鐣屽姝ｇ‘鐜粫锛?                # 瀹岀編鏀寔浠绘剰缁村害 Tensor锛岄伩寮€ PyTorch F.pad 瀵?(Batch, Channel) 缁村害鐨勭‖鎬ц姹?                # ====================================================================
+                # Apply circular padding explicitly so convolution kernels wrap correctly at periodic boundaries.
                 if pad_size > 0:
                     # Last pad_size elements along this axis.
                     head = out.narrow(axis_idx, out.shape[axis_idx] - pad_size, pad_size)
                     # First pad_size elements along this axis.
                     tail = out.narrow(axis_idx, 0, pad_size)
-                    # 鎷兼帴锛歔灏鹃儴, 鍘熸暟鎹? 澶撮儴]
+                    # Concatenate [tail, original field, head].
                     out_padded = torch.cat([head, out, tail], dim=axis_idx)
                 else:
                     out_padded = out
 
                 out = self._apply_valid_axis_filter(out_padded, axis_idx, filt)
             else:
-                # 濡傛灉涓嶆槸鍛ㄦ湡杈圭晫锛岀洿鎺ユ粦鍔ㄧ獥鍙ｏ紝鐢变簬缂轰箯杈圭晫淇℃伅锛岀墿鐞嗙┖闂翠細鑷姩鏀剁缉 (w-1)
+                # For non-periodic boundaries, valid windows contract the physical domain by w - 1.
                 out = self._apply_valid_axis_filter(out, axis_idx, filt)
 
         return out
 
     def apply_weak_form(self, arr: torch.Tensor) -> torch.Tensor:
-        # 缁熶竴鍑哄彛锛氬皢浠讳綍寮哄舰寮忕殑鏁版嵁鍦猴紝绾补鏃犲鏁板湴鎶曞奖鍒板急褰㈠紡鐗瑰緛绌洪棿
+        # Unified interface for projecting a strong-form field into weak-form features.
         return self.project_weak(arr, {})
 
     def project_weak_field_derivative(
@@ -562,7 +562,7 @@ class WeakFormEvaluator:
         self._nan = torch.full_like(ctx.u, float('nan'), dtype=torch.float64, device=ctx.device)
 
     # =========================================================================
-    # 銆愪慨澶嶉噸鐐?1銆? 灏?evaluate 瀹屽叏闄愬埗鍦?PyTorch Tensor 绌洪棿鍐?    # =========================================================================
+    # Keep evaluate entirely in PyTorch tensor space.
     def evaluate(self, token_seq: List[int], constants: Optional[np.ndarray] = None) -> torch.Tensor:
         if not is_valid_sequence(token_seq): return self._nan.clone()
         consts = self._as_tensor_constant(constants, token_seq)
@@ -634,8 +634,8 @@ class WeakFormEvaluator:
 
     def _eval_lap_field_weak(self, field: str) -> torch.Tensor:
         """
-        缁ф壙 1D 鏋舵瀯鐨勭鏉ヤ箣绗旓細瀹屽叏鎶涘純 FFT 寮烘眰瀵硷紝
-        鍒╃敤 project_weak 灏嗕簩闃剁┖闂村鏁拌浆绉诲埌娴嬭瘯鍑芥暟涓婏紝瀹炵幇瀹岀編鎶楀櫔銆?        """
+        Project second-order spatial derivatives into weak form rather than explicitly applying FFT differentiation.
+        The derivative is transferred to the test function through project_weak, reducing strong-form noise amplification."""
         val = self.ctx.get(field)
         if val is None:
             return self._weak_nan_like()
@@ -775,7 +775,7 @@ class WeakFormEvaluator:
 
     def _try_conservative_product_projection(self, node: _Node, consts: torch.Tensor, strong_memo: Dict) -> Optional[torch.Tensor]:
         """
-        鎷︽埅褰㈠ f(q) * D(ax, q) 鐨勪繚瀹堝舰寮忎箻绉紝閫氳繃瑙ｆ瀽绉垎鏋勯€犻€氶噺 F(q)锛?        鐒跺悗鏃犲鏁版姇褰卞埌寮卞舰寮忥細 project_weak(F(q), {ax: 1})銆?        瀹屽叏閬垮厤楂橀鍣０琚己褰㈠紡瀵兼暟鍜岄潪绾挎€ч」鐩镐箻鏀惧ぇ銆?        """
+        Evaluate a conservative product f(q) * D(ax, q) in weak form. The flux antiderivative F(q) is projected with project_weak(F(q), {ax: 1}) to avoid nonlinear amplification of noisy derivatives."""
         if node.op != "*" or len(node.children) != 2:
             return None
 
@@ -806,7 +806,7 @@ class WeakFormEvaluator:
             base_val = self._eval_node(base_node, consts, strong_memo)
             flux_val = self._eval_poly_dict(primitive, base_val)
 
-            # 銆愪慨澶嶇偣 2銆戯細灏嗙┖闂村鏁板畬鍏ㄨ浆绉诲埌娴嬭瘯鍑芥暟涓婏紝瀹岀編娑堥櫎寮哄舰寮忓鏁颁骇鐢熺殑鍚夊竷鏂櫔澹般€?            # 渚嬪瀵逛簬 u * u_x锛屾湰璐ㄤ笂鏄湪璁＄畻绉垎 -int( 0.5 * u^2 * phi_x )
+            # Transfer spatial derivatives to test functions; u * u_x becomes -int(0.5 * u**2 * phi_x).
             return self.ctx.project_weak(flux_val, {axis: 1})
 
         return None
@@ -862,7 +862,7 @@ class WeakFormEvaluator:
         elif op == "D":
             base_node, axes = self._get_deriv_chain(node)
 
-            # --- 馃専 鎸佷箙鍖栫紦瀛橈細鍘熺敓鍦烘眰瀵?(璺‥poch澶嶇敤) ---
+            # Persistent cache for raw-field derivatives reused across epochs.
             is_native_field = base_node.op in self.ctx.fields
             ctx_cache_key = None
             if is_native_field and not node.has_const:
@@ -902,7 +902,7 @@ class WeakFormEvaluator:
             child_node = node.children[0] if node.children else None
             child_field = child_node.op if child_node else "u"
 
-            # --- 馃専 鎸佷箙鍖栫紦瀛橈細Laplacian 瀹忕畻瀛?---
+            # Persistent cache for Laplacian macro operators.
             ctx_cache_key = f"weak_lap_{child_field}"
             if not hasattr(self.ctx, "_cache"):
                 self.ctx._cache = {}
@@ -993,7 +993,8 @@ class WeakFormEvaluator:
                     strong_val = torch.broadcast_to(strong_val, self.ctx.get(self.ctx.fields[0]).shape)
             val = self.ctx.project_weak(strong_val, {})
 
-        # 褰撳墠 evaluation 鍐呯殑鎵€鏈夊瓙鏍戦兘缂撳瓨锛涜法 evaluation 鐨勫叏灞€缂撳瓨鍙繚瀛樻棤甯告暟瀛愭爲銆?        target_memo[cache_key] = val
+        # Cache every subtree within an evaluation; cross-evaluation caching retains only constant-free subtrees.
+        target_memo[cache_key] = val
         if not node.has_const:
             _WEAK_TARGET_CACHE[cache_key] = val
         return val
@@ -1063,7 +1064,7 @@ class WeakFormEvaluator:
         return lambda consts: func(self, consts)
 
     # =========================================================================
-    # 銆愪慨澶嶉噸鐐?2銆? 褰诲簳绉婚櫎 np.asarray锛屽叏閲忚繑鍥?torch.Tensor
+    # Keep the evaluator entirely in PyTorch tensor space; do not convert through np.asarray.
     # =========================================================================
     def _eval_node(self, node: _Node, consts: torch.Tensor, memo: Dict) -> torch.Tensor:
         context_aware_key = f"{self.ctx.cache_id}_{node.key}"
@@ -1092,7 +1093,7 @@ class WeakFormEvaluator:
         elif op == "D":
             base_node, axes = self._get_deriv_chain(node)
 
-            # --- 馃専 鎸佷箙鍖栫紦瀛橈細鎷︽埅鍘熺敓鍦哄己姹傚 ---
+            # Persistent cache for protected raw-field strong derivatives.
             is_base_field = base_node.op in self.ctx.fields and len(set(axes)) == 1 and len(axes) <= 3 and axes[0] != 't'
             ctx_cache_key = None
             if is_base_field:
@@ -1634,17 +1635,17 @@ def compose_fitness(base_stats: Dict[str, Any]) -> Dict[str, Any]:
     n_const = out.get("num_constants", 0)
 
     # =========================================================================
-    # 1. 閲婃斁鏈哄櫒鏋侀檺 (Machine Precision Release)
-    # 褰诲簳搴熼櫎 1e-4 鐨勭‖鎬у簳绾匡紝鍏佽娣卞叆鍒?1e-15 鐨勫弻绮惧害鐗╃悊鏋侀檺銆?    # =========================================================================
+    # 1. Allow machine-precision residuals.
+    # Remove the hard 1e-4 floor and retain double-precision sensitivity.
     eff_nmse = max(nmse, 1e-15)
 
     # =========================================================================
-    # 2. 杞崲鍒?Log10 瀵规暟灏哄害 (娑堥櫎鎮礀鏁堝簲)
-    # 骞崇Щ +15.0 淇濊瘉 fitness 濮嬬粓涓烘鏁?(鑼冨洿 0.0 ~ 15.0+)锛屽畬缇庡吋瀹逛笅娓?REINFORCE銆?    # =========================================================================
+    # 2. Use a log10 scale to limit reward saturation.
+    # Shift by +15 to retain a positive fitness scale compatible with REINFORCE.
     log_base_score = math.log10(eff_nmse) + 15.0
 
     # =========================================================================
-    # 3. 涓ユ牸 MDL 瀵规暟鍔犳硶鎯╃綒 (Log-Additive Penalty)
+    # 3. Apply a log-additive MDL penalty.
     # =========================================================================
     struct_bits = comp * math.log(max(vocab_size, 2))
     param_bits = n_const * 0.5 * math.log(max(n_eff, 2.0))
@@ -1707,7 +1708,7 @@ def compose_fitness(base_stats: Dict[str, Any]) -> Dict[str, Any]:
     # Stored after hard constraints below.
 
     # =========================================================================
-    # 4. 鐗╃悊鍏堥獙纭害鏉?    # =========================================================================
+    # 4. Enforce physics-oriented structural constraints.
     max_deriv = out.get("max_deriv_depth", 0)
     if max_deriv > 3:
         fitness += 5.0 * (max_deriv - 2)
@@ -1731,7 +1732,7 @@ def compose_fitness(base_stats: Dict[str, Any]) -> Dict[str, Any]:
 def compute_fitness(token_seq, ctx, constants=None, *args, **kwargs):
     from models.weak_form_evaluator import WeakFormEvaluator
     from models.symbol_vocabulary import IDX2SYM, COMPLEXITY_MAP, SYM2IDX
-    # 娉ㄦ剰锛氱‘淇濊繖閲岃皟鐢ㄤ簡浣犵殑 normalize_target_field_name
+    # Normalize the target field name before constructing the evaluator.
     target_field = kwargs.get("target_field", "du_t")
 
     ev = WeakFormEvaluator(ctx)
@@ -1762,7 +1763,7 @@ def compute_fitness(token_seq, ctx, constants=None, *args, **kwargs):
         mse_raw = float(residual.pow(2).mean().item())
         denom = float(torch.var(lhs_score).item()) if getattr(ctx, "normalize_mse", False) else 1.0
 
-        # --- 鑾峰彇鎴戜滑鍦?DataContext 涓璁＄畻濂界殑鐗╃悊鑷敱搴?---
+        # Use the physical effective sample size computed by DataContext.
         # Fallback to a conservative physical effective sample size if unavailable.
         n_eff = getattr(ctx, "n_eff_physical", 50.0)
     else:
@@ -1805,7 +1806,7 @@ def compute_fitness(token_seq, ctx, constants=None, *args, **kwargs):
     spectral_stats = _spectral_residual_stats(residual, ctx, denom, kwargs)
     multi_window_stats = _multi_window_residual_stats(residual, ctx, denom, kwargs)
 
-    # 4. 鎷︽埅鍙戞暎鐨勫ぇ甯告暟
+    # 4. Penalize divergent constants.
     diverge_penalty = False
     for c in safe_constants:
         try:
@@ -1815,15 +1816,15 @@ def compute_fitness(token_seq, ctx, constants=None, *args, **kwargs):
         if abs(val) > 100.0:
             diverge_penalty = True
 
-    # --- 鏍稿績淇锛氳繕鍘熸鏋舵墍闇€鐨勫叏閮ㄩ敭鍊?---
+    # Restore the full result schema required by downstream consumers.
     base = {
         "residual_mse": mse_scaled,
-        "raw_mse": mse_raw,                 # 淇鏃ュ織 MSE=1e18
+        "raw_mse": mse_raw,                 # Preserve the unscaled MSE for diagnostics.
         "complexity": comp,
         "max_deriv_depth": max_deriv_depth,
         "num_constants": len(safe_constants),
         "diverge_penalty": diverge_penalty,
-        "pred_valid": True,                 # 淇 Valid=0 宕╂簝
+        "pred_valid": True,                 # Preserve a valid prediction flag for result aggregation.
         "n_eff": n_eff,
         "vocab_size": len(SYM2IDX),
         "mdl_penalty_weight": float(kwargs.get("mdl_penalty_weight", 0.25)),

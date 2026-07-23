@@ -12,7 +12,7 @@ This version is intentionally token-level first:
   Therefore:
     u * D(x, neg(v)) + v * D(y, neg(v))       -> neg(adv(v))
 
-  adv is intentionally not a generic v路鈭噏 operator; adv(child) is valid only
+  adv is intentionally a field-specific transport macro; adv(child) is valid only
   when child is one native field token u/v/w present in the active vocabulary.
 
 The goal is to ensure equivalent forms share the same canonical key and the
@@ -100,12 +100,11 @@ class EquationNormalizer:
         prune_tol: float = 5e-5,
         const_mask: Optional[np.ndarray] = None,
     ) -> List[int]:
-        """
-        鍖栫畝骞惰鑼冨寲琛ㄨ揪寮忓簭鍒椼€?        鏀寔鍩轰簬闃堝€肩殑鍓灊 (prune_tol) 鍜屽熀浜庡閮ㄦ帺鐮佺殑绮惧噯娑堣瀺 (const_mask)銆?        """
-        # 棣栧厛鎵ц鍩虹鐨勭粨鏋勮鑼冨寲
+        """Simplify and canonicalize an expression sequence with threshold pruning and optional constant masking."""
+        # First canonicalize the structural sequence.
         canonical = self.normalize(list(seq))
 
-        # 濡傛灉娌℃湁甯告暟鏁扮粍锛岀洿鎺ヨ繑鍥炶鑼冨寲鍚庣殑搴忓垪
+        # Return the canonicalized sequence directly when no constants are present.
         if consts is None:
             return canonical
 
@@ -127,16 +126,17 @@ class EquationNormalizer:
         except ImportError:
             return canonical
 
-        # 1. 鏋勫缓 AST 鏍?        tree, pos = self._build_tree(list(canonical), 0)
+        # 1. Build the AST.
+        tree, pos = self._build_tree(list(canonical), 0)
         if tree is None or pos != len(canonical):
             return canonical
 
-        # 瀹氫箟绗﹀彿鐜
+        # Define symbolic coordinates and fields.
         coords = [sp.Symbol(c) for c in ["t", "x", "y", "z"]]
         sp_funcs = {sym: sp.Function(sym)(*coords) for sym in _FIELDS if sym in self.sym2idx}
 
         # =========================================================
-        # 馃専 淇 1锛氬皢瀹忕畻瀛愭敞鍐屼负 SymPy 鍗犱綅鍑芥暟锛岄槻姝㈠寲绠€鍣ㄧ溂鐩?        # =========================================================
+        # Register macro operators as SymPy placeholders to prevent unintended expansion.
         macro_funcs = {sym: sp.Function(sym) for sym in ["adv", "lap"] if sym in self.sym2idx}
 
         c_idx = 0
@@ -147,7 +147,7 @@ class EquationNormalizer:
                 return None
             sym = self._sym(node)
 
-            # --- 甯告暟鑺傜偣澶勭悊 (娑堣瀺閫昏緫鏍稿績) ---
+            # Constant-node handling, including ablation masking.
             if sym in ("const", "c"):
                 if consts is not None and c_idx < len(consts):
                     val = float(consts[c_idx])
@@ -164,13 +164,13 @@ class EquationNormalizer:
                     return sp.Float(val)
                 return sp.Float(random.uniform(1.1, 9.9))
 
-            # --- 鐗╃悊鍦轰笌鍙橀噺 ---
+            # Physical fields and coordinates.
             if sym in sp_funcs:
                 return sp_funcs[sym]
             if sym in ["t", "x", "y", "z"]:
                 return sp.Symbol(sym)
 
-            # --- 绠楀瓙澶勭悊 ---
+            # Operator handling.
             if sym in macro_funcs:
                 if not node.get("children"): return None
                 child = _to_sp(node["children"][0])
@@ -224,18 +224,18 @@ class EquationNormalizer:
 
             return None
 
-        # 鎵ц SymPy 杞崲
+        # Convert the AST to a SymPy expression.
         sp_expr = _to_sp(tree)
         if sp_expr is None:
             return canonical
 
         try:
-            # 鎵ц鏍稿績浠ｆ暟鍖栫畝锛氬睍寮€姹傚 -> 绠€鍖栬〃杈惧紡 -> 甯搁噺鎶樺彔
+            # Expand derivatives, simplify the expression, and fold constants.
             sp_expr = sp.simplify(sp_expr.doit())
         except Exception:
             return canonical
 
-        # 3. 灏?SymPy 琛ㄨ揪寮忚繕鍘熶负 Token 搴忓垪
+        # 3. Convert the SymPy expression back to a token sequence.
         def _sp_to_seq(expr) -> Optional[List[int]]:
             if isinstance(expr, sp.Derivative):
                 seq_child = _sp_to_seq(expr.args[0])
@@ -463,42 +463,42 @@ class EquationNormalizer:
         return out if self._is_valid_sequence(out) else list(seq)
 
     def _structural_simplify(self, tree: dict) -> dict:
-        """閫掑綊鎵ц AST 甯告暟鎶樺彔"""
+        """Recursively apply constant folding to an AST."""
         if not tree or "children" not in tree or not tree["children"]:
             return tree
 
-        # 1. 娣卞害浼樺厛锛氬厛閫掑綊鍖栫畝鎵€鏈夊瓙鑺傜偣
+        # Simplify child nodes depth first.
         simplified_children = [self._structural_simplify(c) for c in tree["children"]]
         tree["children"] = simplified_children
 
         op_sym = self.idx2sym.get(tree["op"], "")
 
-        # --- 瑙勫垯 A锛氶樆鏂梾鎬佺畻瀛愬祵濂?(Pathological Nesting Shield) ---
+        # Rule A: shield against pathological operator nesting.
         if op_sym in {"sq", "cube", "exp", "log", "sin", "cos"}:
             child_sym = self.idx2sym.get(simplified_children[0]["op"], "")
             if child_sym in {"sq", "cube", "exp", "log", "sin", "cos", "neg"}:
                 raise ValueError("Pathological operator nesting detected")
 
-        # --- 瑙勫垯 B锛氫竴鍏冪畻瀛愬悶鍣父鏁?---
+        # Rule B: absorb constants through unary operators.
         if op_sym in _UNARY and len(simplified_children) == 1:
             if self.idx2sym.get(simplified_children[0]["op"], "") in {"const", "c"}:
                 return {"op": self.sym2idx["const"], "children": []}
 
-        # --- 瑙勫垯 C锛氱粨鍚堝緥骞抽摵涓庡父鏁板ぇ涓€缁?(The Constant Collapser) ---
+        # Rule C: flatten associative operators and collapse constants.
         if op_sym in {"+", "*"}:
             operands = self._flatten_associative(tree, op_sym)
 
             # =========================================================
-            # 馃専 淇 2B锛氶搧鑵曠墿鐞嗗壀鏋?            # =========================================================
+            # Rule C.1: conservative physical pruning.
             if op_sym == "+":
-                # 鍔犳硶锛氱洿鎺ユ妸甯︽湁 is_zero 鏍囪鐨勬瀬鍏跺井灏忛」浠庡垪琛ㄤ腑鍓旈櫎
+                # Addition: remove terms marked as zero.
                 operands = [n for n in operands if not n.get("is_zero", False)]
-                # 濡傛灉鍏ㄨ鍓旈櫎浜嗭紝杩斿洖涓€涓爣璁颁负闆剁殑甯告暟鑺傜偣
+                # Return a zero-marked constant node when every term is removed.
                 if not operands:
                     return {"op": self.sym2idx["const"], "children": [], "is_zero": True}
 
             if op_sym == "*":
-                # 涔樻硶锛氬彧瑕佸寘鍚竴涓?is_zero 鐨勫洜瀛愶紝鏁翠釜涔樻硶鏍戠洿鎺ョ墿鐞嗘巩鐏紒
+                # Multiplication: any zero factor makes the full product zero.
                 if any(n.get("is_zero", False) for n in operands):
                     return {"op": self.sym2idx["const"], "children": [], "is_zero": True}
             # =========================================================
@@ -515,7 +515,7 @@ class EquationNormalizer:
             new_operands = const_nodes + non_const_nodes
             return self._build_binary_tree(new_operands, tree["op"])
 
-        # --- 瑙勫垯 D锛氫簩鍏冪畻瀛愬悶鍣父鏁?---
+        # Rule D: absorb constants through binary operators.
         if op_sym in {"/", "^"} and len(simplified_children) == 2:
             left_sym = self.idx2sym.get(simplified_children[0]["op"], "")
             right_sym = self.idx2sym.get(simplified_children[1]["op"], "")
@@ -525,7 +525,7 @@ class EquationNormalizer:
         return tree
 
     def _flatten_associative(self, tree: dict, target_op_sym: str) -> List[dict]:
-        """灏嗚繛缁殑 + 鎴?* 宓屽缁撴瀯骞抽摵鎴愪竴缁存搷浣滄暟鍒楄〃"""
+        """Flatten nested + or * operations into a one-dimensional operand list."""
         op_sym = self.idx2sym.get(tree["op"], "")
         if op_sym != target_op_sym:
             return [tree]
@@ -536,7 +536,7 @@ class EquationNormalizer:
         return operands
 
     def _build_binary_tree(self, nodes: List[dict], op_idx: int) -> dict:
-        """灏嗕竴缁村垪琛ㄩ噸鏂版姌鍙犱负绗﹀悎绯荤粺瑙ｆ瀽瑙勮寖鐨勪簩鍙夋爲"""
+        """Fold an operand list into a binary tree that follows the parser grammar."""
         if len(nodes) == 1:
             return nodes[0]
         return {
@@ -545,7 +545,7 @@ class EquationNormalizer:
         }
 
     def _tree_to_seq(self, tree: dict) -> List[int]:
-        """灏?AST 閫嗗悜瑙ｆ瀽涓哄墠缂€ token 搴忓垪"""
+        """Convert an AST back into a prefix-token sequence."""
         if not tree:
             return []
         seq = [tree["op"]]
@@ -648,25 +648,25 @@ class EquationNormalizer:
             factors = [self._canonicalize_once(f) for f in factors]
 
             # ========================================================
-            # 馃専 缁堟瀬淇锛氬湪杩炰箻鍥犲瓙鍒楄〃涓洿鎺ュ梾鎺㈠苟鍚堝苟 1D advection
-            # 褰诲簳瑙ｅ喅 -6 * u * u_x 鏃犳硶琚瘑鍒负 -6 * adv(u) 鐨勫熀鍥犲垎瑁傞棶棰?            # ========================================================
+            # Detect and merge one-dimensional advection factors in products.
+            # This recognizes -6 * u * u_x as -6 * adv(u) without splitting its physical factor.
             active_fields = [f for f in ("u", "v", "w") if f in self.sym2idx]
             active_axes = [a for a in ("x", "y", "z") if a in self.sym2idx]
 
-            # 涓ユ牸闄愬埗锛氬彧鏈?1D 绯荤粺锛堝崟鍦哄崟绌洪棿杞达級鎵嶅厑璁镐箻娉曠骇鍒殑瀵规祦鍚堝苟
+            # Restrict multiplicative advection merging to one-dimensional single-field systems.
             if len(active_fields) == 1 and len(active_axes) == 1:
                 f_name = active_fields[0]
                 a_name = active_axes[0]
 
                 while True:
-                    # 1. 瀵绘壘鍗曠嫭鐨勫満鑺傜偣 (濡?u)
+                    # 1. Find an independent field node, for example u.
                     idx_field = -1
                     for i, f in enumerate(factors):
                         if self._sym(f) == f_name and not f.get("children"):
                             idx_field = i
                             break
 
-                    # 2. 瀵绘壘瀵瑰簲鐨勫鏁拌妭鐐?(濡?D_x(u))
+                    # 2. Find its matching derivative node, for example D_x(u).
                     idx_deriv = -1
                     if idx_field != -1:
                         for i, f in enumerate(factors):
@@ -677,14 +677,14 @@ class EquationNormalizer:
                                     idx_deriv = i
                                     break
 
-                    # 3. 濡傛灉鍚屾椂鎵惧埌锛屽皢瀹冧滑浠庡垪琛ㄤ腑鎶藉嚭骞跺悎浣撲负 adv
+                    # 3. Extract and merge the matching field-gradient pair as adv.
                     if idx_field != -1 and idx_deriv != -1:
                         f_f = factors.pop(max(idx_field, idx_deriv))
                         f_d = factors.pop(min(idx_field, idx_deriv))
                         adv_node = self._make("adv", [f_f])
                         factors.append(adv_node)
                     else:
-                        break  # 娌℃湁鏇村鐨勫娴侀」鍙互鍚堝苟浜?            # ========================================================
+                        break  # No additional advection factor can be merged.
 
             factors.sort(key=lambda c: self._get_subtree_priority(c))
             core = self._make_balanced("*", factors)
@@ -773,7 +773,7 @@ class EquationNormalizer:
         return out
 
     def _try_rewrite_advection_product(self, tree: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """涓撻棬閽堝 1D 绯荤粺鐨勫娴佸畯绠楀瓙瑙勮寖鍖? u * D_x(q) -> adv(q)"""
+        """Canonicalize the 1D advection macro: u * D_x(q) -> adv(q)."""
         parsed = self._parse_velocity_gradient_product(tree)
         if parsed is None:
             return None
@@ -784,7 +784,7 @@ class EquationNormalizer:
         active_axes = [a for a in _AXES if a in self.sym2idx]
         required = list(zip(active_fields, active_axes))
 
-        # 浠呭湪 1D 绯荤粺涓嬭Е鍙戝崟椤瑰紡瀵规祦鍚堝苟
+        # Enable single-term advection merging only for one-dimensional systems.
         if len(required) == 1 and (field, axis) == required[0]:
             q_sign, q_core = self._strip_full_neg(child)
             q_name = self._sym(q_core)
