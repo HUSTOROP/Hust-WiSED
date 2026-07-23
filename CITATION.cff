@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use WiSED, please cite the associated manuscript and the software release or commit hash."
+title: "WiSED"
+type: software
+authors:
+  - name: "HUSTOROP"
+repository-code: "https://github.com/HUSTOROP/Hust-WiSED"
+license: MIT

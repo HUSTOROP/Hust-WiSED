@@ -1,0 +1,1 @@
+"""WiSED package namespace."""

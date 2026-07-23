@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+
+# Generated experiment artifacts
+outputs/
+logs/
+*.log
+
+# Companion release data installed locally
+data/dataset/*.npz
+!data/dataset/README.md
+engineering_validation/soc_eis_impedance_manifold/data/*
+!engineering_validation/soc_eis_impedance_manifold/data/README.md
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
