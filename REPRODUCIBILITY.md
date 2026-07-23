@@ -3,8 +3,7 @@
 ## Scope of this release
 
 This repository contains the WiSED framework, retained benchmark generators and
-the two engineering-validation entry points used in the manuscript. Generated
-training artifacts are not committed. The associated numerical source data and
+the two engineering-validation entry points used in the manuscript. The associated numerical source data and
 public raw SOC-EIS measurements are maintained in
 [`Hust-WiSED-Dataset`](https://github.com/HUSTOROP/Hust-WiSED-Dataset).
 
@@ -33,13 +32,6 @@ concentration profiles, `tau_max = 1.0`, a 3% additive field-noise level, and
 seed 0. The numerical simulator clips the concentration to `[0, 1]` after each
 time step.
 
-```bash
-python -m engineering_validation.sib_diffusion_raw_field.run_sib_diffusion_discovery \
-  --device cpu --seed 0 --noise-level 0.03 --use-cached-dataset
-```
-
-Outputs are created under `outputs/sib_diffusion/noise_0.03__seed_0/`.
-
 ### SOC-EIS impedance manifold
 
 The SOC-EIS example represents the measured impedance as coupled fields over
@@ -55,13 +47,6 @@ v(q, x) = standardized -Im(Z)
 B01-B09 supply discovery surfaces, B10 is used for validation, and B11 is the
 retained held-out test battery. WiSED estimates field derivatives internally
 and searches coupled evolution equations for `u_q` and `v_q`.
-
-```bash
-python -m engineering_validation.soc_eis_impedance_manifold.run_soc_eis_b11_discovery \
-  --device cpu --seed 0
-```
-
-Outputs are created under `outputs/soc_eis_b11/noise_0__seed_0/`.
 
 ## Computational environment
 
