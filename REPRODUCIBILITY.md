@@ -15,10 +15,13 @@ After cloning both repositories, run:
 python scripts/install_release_data.py --dataset-root ../Hust-WiSED-Dataset
 ```
 
-The command places the SIB cached field in `data/dataset/` and the public
-SOC-EIS measurements in
+The command installs the 28 controlled benchmark archives and the SIB cached
+field in `data/dataset/`, and places the public SOC-EIS measurements in
 `engineering_validation/soc_eis_impedance_manifold/data/`. It does not modify
 any tracked source file.
+
+The benchmark archives are stored with Git LFS in the dataset repository. Run
+`git lfs pull` there before invoking the installer.
 
 ## Retained experiments
 

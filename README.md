@@ -12,8 +12,8 @@ SOC-EIS impedance-manifold dynamics.
   the companion dataset repository.
 - `engineering_validation/`: runnable SIB and SOC-EIS experiments.
 - `models/`, `src/`, `utils/`: WiSED implementation.
-- `scripts/install_release_data.py`: installs the companion release data into
-  the paths expected by the engineering examples.
+- `scripts/install_release_data.py`: installs benchmark and engineering data
+  from the companion dataset repository.
 - `REPRODUCIBILITY.md`: retained experimental settings and output locations.
 
 ## Installation
@@ -30,6 +30,10 @@ the companion data:
 
 ```bash
 python -m pip install -r requirements.txt
+cd ../Hust-WiSED-Dataset
+git lfs install
+git lfs pull
+cd ../Hust-WiSED
 python scripts/install_release_data.py --dataset-root ../Hust-WiSED-Dataset
 ```
 
