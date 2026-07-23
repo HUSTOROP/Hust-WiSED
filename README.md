@@ -50,10 +50,6 @@ python -m engineering_validation.soc_eis_impedance_manifold.run_soc_eis_b11_disc
   --device cpu --seed 0
 ```
 
-New artifacts are written to `outputs/`, which is intentionally excluded from
-version control. Source data for the manuscript figures are in the companion
-repository under `figure_data/`.
-
 ## Data provenance
 
 The SOC-EIS validation uses the public dataset of Mustafa *et al.* from Mendeley
@@ -64,10 +60,5 @@ The original authors and the CC BY 4.0 terms must be retained when reusing the
 measurements. See the companion repository for the data README and license
 boundaries.
 
-## Citation and license
 
-Please cite the accompanying WiSED manuscript when available, record the Git
-commit used for a result, and cite the SOC-EIS source dataset when that
-validation is reused. The WiSED source code is released under the MIT License;
-third-party data are not covered by that code license.
 
