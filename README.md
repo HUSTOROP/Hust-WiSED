@@ -3,7 +3,7 @@
 WiSED is a research implementation for discovering compact, open-form partial
 differential equations (PDEs) from noisy spatiotemporal fields. The release
 contains the framework used for the manuscript, four controlled PDE benchmarks,
-and two engineering validations: radial lithium-ion diffusion and coupled
+and two engineering validations: spherical-particle ion diffusion and coupled
 SOC-EIS impedance-manifold dynamics.
 
 ## Repository contents
